@@ -70,7 +70,7 @@ typedef struct rizz_coll_context_t {
     sx_handle_pool* handles;                // handle pool for arrays below
     coll_entity_mask_pair* ent_mask_pairs;  // sx_array
     sx_aabb* aabbs;                         // sx_array
-    rizz_coll_shape_poly* polys;                 // sx_array
+    rizz_coll_shape_poly* polys;            // sx_array
     sx_box* boxes;                          // sx_array: .e.x == .e.y == .e.z == 0 if static/poly only
     sx_aabb* transformed_aabbs;             // sx_array
     sx_box* transformed_boxes;              // sx_array
@@ -465,7 +465,7 @@ static rizz_coll_pair* coll_detect(rizz_coll_context* ctx, const sx_alloc* alloc
     int const num_cells_x = ctx->num_cells_x;
     rizz_coll_pair* pairs = NULL;
 
-    const sx_alloc* tmp_alloc = the_core->tmp_alloc_push();
+    rizz_temp_alloc_begin(tmp_alloc);
     sx_array_reserve(alloc, pairs, 50);
 
     #if STRIKE_DEBUG_COLLISION
@@ -562,7 +562,7 @@ static rizz_coll_pair* coll_detect(rizz_coll_context* ctx, const sx_alloc* alloc
     } // foreach (upadted_entity_handles)
 
     sx_array_clear(ctx->updated_ent_handles);
-    the_core->tmp_alloc_pop();
+    rizz_temp_alloc_end(tmp_alloc);
 
     return pairs;
 }
@@ -625,7 +625,7 @@ static uint64_t* coll_query_sphere(rizz_coll_context* ctx, sx_vec3 center, float
     sx_ivec2 hmin = coll__hash_point(ctx, sx_vec2fv(aabb.vmin));
     sx_ivec2 hmax = coll__hash_point(ctx, sx_vec2fv(aabb.vmax));
 
-    const sx_alloc* tmp_alloc = the_core->tmp_alloc_push();
+    rizz_temp_alloc_begin(tmp_alloc);
 
     // broad-phase
     sx_handle_t* candidates = NULL;
@@ -682,7 +682,7 @@ static uint64_t* coll_query_sphere(rizz_coll_context* ctx, sx_vec3 center, float
         sx_array_push(alloc, ents, test_entmask.entity);
     } // foreach (candidate)
 
-    the_core->tmp_alloc_pop();
+    rizz_temp_alloc_end(tmp_alloc);
     return ents;
 }
 
@@ -697,7 +697,7 @@ static uint64_t* coll_query_poly(rizz_coll_context* ctx, const rizz_coll_shape_p
     sx_ivec2 hmin = coll__hash_point(ctx, sx_vec2fv(rect.vmin));
     sx_ivec2 hmax = coll__hash_point(ctx, sx_vec2fv(rect.vmax));
 
-    const sx_alloc* tmp_alloc = the_core->tmp_alloc_push();
+    rizz_temp_alloc_begin(tmp_alloc);
 
     // broad-phase
     sx_handle_t* candidates = NULL;
@@ -752,7 +752,7 @@ static uint64_t* coll_query_poly(rizz_coll_context* ctx, const rizz_coll_shape_p
         sx_array_push(alloc, ents, test_entmask.entity);
     } // foreach (candidate)
 
-    the_core->tmp_alloc_pop();
+    rizz_temp_alloc_end(tmp_alloc);
     return ents;
 }
 
@@ -901,7 +901,7 @@ static rizz_coll_rayhit* coll_query_ray(rizz_coll_context* ctx, rizz_coll_ray ra
     // broadphase: Bresenham AA line drawing
     int* candidate_cells = NULL;
     rizz_coll_rayhit* hits = NULL;
-    const sx_alloc* tmp_alloc = the_core->tmp_alloc_push();
+    rizz_temp_alloc_begin(tmp_alloc);
     sx_array_reserve(alloc, hits, 50);
 
     int x0 = p0.x, y0 = p0.y, x1 = p1.x, y1 = p1.y;
@@ -1010,7 +1010,7 @@ static rizz_coll_rayhit* coll_query_ray(rizz_coll_context* ctx, rizz_coll_ray ra
         coll__sort_rayhit_tim_sort(hits, hit_count);
     }
 
-    the_core->tmp_alloc_pop();
+    rizz_temp_alloc_end(tmp_alloc);
     return hits;
 }
 
@@ -1029,6 +1029,26 @@ static sx_rect coll_cell_rect(rizz_coll_context* ctx, int cell_idx)
 {
     sx_assert(cell_idx < ctx->num_cells);
     return sx_rectce(ctx->cells[cell_idx].center, sx_vec2splat(ctx->grid_cell_size*0.5f));
+}
+
+static bool coll_get_entity_data(rizz_coll_context* ctx, uint64_t ent, rizz_coll_entity_data* outdata)
+{
+    sx_handle_t handle = (sx_handle_t)sx_hashtbl_find_get(ctx->ent_tbl, sx_hash_u64_to_u32(ent), 0);
+    if (handle) {
+        sx_assert(sx_handle_valid(ctx->handles, handle));
+
+        int index = sx_handle_index(handle);
+        sx_vec3 e = ctx->boxes[index].e;
+        outdata->box = ctx->transformed_boxes[index];
+        outdata->aabb = ctx->transformed_aabbs[index];
+        outdata->is_static = (e.x + e.y + e.z) < 0.00001f;
+        outdata->poly = ctx->polys[index];
+        outdata->mask = ctx->ent_mask_pairs[index].mask;
+
+        return true;
+    } else {
+        return false;
+    }
 }
 
 #if STRIKE_DEBUG_COLLISION
@@ -1277,7 +1297,8 @@ static rizz_api_coll the__coll = {
     .debug_collisions = coll_debug_collisions,
     .debug_raycast = coll_debug_raycast,
     .num_cells = coll_num_cells,
-    .cell_rect = coll_cell_rect
+    .cell_rect = coll_cell_rect,
+    .get_entity_data = coll_get_entity_data
 };
 
 rizz_plugin_decl_main(collision, plugin, e)

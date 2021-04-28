@@ -958,11 +958,13 @@ static bool imgui__resize_buffers(int max_verts, int max_indices)
     g_imgui.bind.vertex_buffers[0] =
         the_gfx->make_buffer(&(sg_buffer_desc){ .type = SG_BUFFERTYPE_VERTEXBUFFER,
                                                 .usage = SG_USAGE_STREAM,
-                                                .size = sizeof(ImDrawVert) * max_verts });
+                                                .size = sizeof(ImDrawVert) * max_verts,
+                                                .label = "imgui_vbuff" });
     g_imgui.bind.index_buffer =
         the_gfx->make_buffer(&(sg_buffer_desc){ .type = SG_BUFFERTYPE_INDEXBUFFER,
                                                 .usage = SG_USAGE_STREAM,
-                                                .size = sizeof(uint16_t) * max_indices });
+                                                .size = sizeof(uint16_t) * max_indices,
+                                                .label = "imgui_ibuff" });
     if (!g_imgui.bind.vertex_buffers[0].id || !g_imgui.bind.index_buffer.id) {
         return false;
     }
@@ -1133,11 +1135,12 @@ static bool imgui__init(void)
                           .min_filter = SG_FILTER_LINEAR,
                           .mag_filter = SG_FILTER_LINEAR,
                           .content.subimage[0][0].ptr = font_pixels,
-                          .content.subimage[0][0].size = font_width * font_height * 4 });
+                          .content.subimage[0][0].size = font_width * font_height * 4,
+                          .label = "imgui_font" });
 
     conf->Fonts->TexID = (ImTextureID)(uintptr_t)g_imgui.font_tex.id;
 
-    const sx_alloc* tmp_alloc = the_core->tmp_alloc_push();
+    rizz_temp_alloc_begin(tmp_alloc);
 
     rizz_shader shader = the_gfx->shader_make_with_data(
         tmp_alloc, k_imgui_vs_size, k_imgui_vs_data, k_imgui_vs_refl_size, k_imgui_vs_refl_data,
@@ -1151,12 +1154,13 @@ static bool imgui__init(void)
                                   .blend = { .enabled = true,
                                              .src_factor_rgb = SG_BLENDFACTOR_SRC_ALPHA,
                                              .dst_factor_rgb = SG_BLENDFACTOR_ONE_MINUS_SRC_ALPHA,
-                                             .color_write_mask = SG_COLORMASK_RGB } };
+                                             .color_write_mask = SG_COLORMASK_RGB },
+                                  .label = "imgui" };
     g_imgui.pip = the_gfx->make_pipeline(
         the_gfx->shader_bindto_pipeline(&shader, &pip_desc, &k__imgui_vertex));
 
     apply_theme();
-    the_core->tmp_alloc_pop();
+    rizz_temp_alloc_end(tmp_alloc);
 
     g_imgui.stage = the_gfx->stage_register("imgui", (rizz_gfx_stage) {0});
 
